@@ -4,8 +4,10 @@ def missing_reference(md, md_filename, line)
   { missing_file: md[2], referenced_in: md_filename, line: line + 1 }
 end
 
-def markup_filenames
-  File.readlines('Book.txt').map(&:strip)
+def markup_filenames(manuscript_folder: 'manuscript')
+  book_filename = File.join(manuscript_folder, 'Book.txt')
+  chapter_files = File.readlines(book_filename).map(&:strip)
+  chapter_files.map { |c_fn| File.join(manuscript_folder,c_fn) }
 end
 
 task default: %i[check_book_file check_linked_files]
@@ -36,10 +38,9 @@ end
 
 desc 'check whether all files in Boot.txt exist'
 task :check_book_file do
-  bk = File.readlines('Book.txt').map(&:strip)
   failed = false
-  bk.each do |fn|
-    if fn.match /^s*#/
+  markup_filenames.each do |fn|
+    if fn.match?(/^\s*#/)
       puts "Ignoring #{fn}"
       next
     elsif File.exist?(fn)
