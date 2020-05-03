@@ -1,8 +1,4 @@
-require 'ap'
-
-def missing_reference(md, md_filename, line)
-  { missing_file: md[2], referenced_in: md_filename, line: line + 1 }
-end
+require 'set'
 
 def markup_filenames(manuscript_folder: 'manuscript')
   book_filename = File.join(manuscript_folder, 'Book.txt')
@@ -10,29 +6,56 @@ def markup_filenames(manuscript_folder: 'manuscript')
   chapter_files.map { |c_fn| File.join(manuscript_folder,c_fn) }
 end
 
-task default: %i[check_book_file check_linked_files]
+def for_each_markup_file
+  markup_filenames.each_with_object(Set.new) do |fn, result_set|
+    yield fn, result_set
+  end
+end
+
+def get_id_definitions
+  for_each_markup_file do |fn, id_defs|
+    content = File.read(fn)
+    res = content.scan(/\{\s*id:\s*([-_0-9a-zA-Z]+).*\}/).flatten
+    id_defs.merge res
+    res = content.scan(/\{\s*#([-_0-9a-zA-Z]+)\s*.*\}/).flatten
+    id_defs.merge res
+    id_defs
+  end
+end
+
+def get_cross_links
+  for_each_markup_file do |fn, id_defs|
+    content = File.read(fn)
+    res = content.scan(/\[[^\]]+\]\(\#([-_0-9a-zA-Z]+)\)/).flatten
+    id_defs.merge res
+    id_defs
+  end
+end
+
+def unused_ids
+  get_cross_links - get_id_definitions
+end
+
+def missing_ids
+  get_id_definitions - get_cross_links
+end
+
+task default: %i[check_book_file check_references]
 
 desc 'Check file references (lines containing <<[…some text…](a-file-path)'
-task :check_linked_files do
-  missing_references = markup_filenames.inject([]) do |res, md_filename|
-    unless File.exist?(md_filename) || md_filename.match?(/\a\s*#\w+/)
-      puts "Ignore file: '#{md_filename}'"
-      next res
-    end
-    File.foreach(md_filename).with_index do |line, line_no|
-      if md = line.match(/<<(\[[^\]]+\])?\((.+?)\)/)
-        res << missing_reference(md, md_filename, line_no) unless File.exist?(md[2])
-      end
-    end
-    res
+task :check_references do
+  if unused_ids.empty?
+    puts "No unused IDs found"
+  else
+    puts "Unused IDs:"
+    puts unused_ids.to_a
   end
 
-  if missing_references.empty?
-    puts 'File name References looking good'
+  if missing_ids.empty?
+    puts "No missing IDs found"
   else
-    puts 'Missing file name references:'
-    ap missing_references
-    exit 1
+    puts "Missing IDs:"
+    puts missing_ids.to_a
   end
 end
 
@@ -53,6 +76,6 @@ task :check_book_file do
   if failed
     exit 1
   else
-    puts 'Looking good'
+    puts 'Book.txt is looking good'
   end
 end
